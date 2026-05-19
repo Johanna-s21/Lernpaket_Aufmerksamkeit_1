@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Interaktives 3D-Buch</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        body {
+            background-color: #2c3e50;
+            background-image: radial-gradient(#34495e, #1a252f);
+            font-family: 'Georgia', serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            color: #2c3e50;
+        }
+
+        /* Hauptcontainer für das Buch */
+        .book-container {
+            position: relative;
+            width: 90vw;
+            height: 65vh;
+            max-width: 1024px; /* Perfekt für iPad Querformat */
+            max-height: 700px;
+            perspective: 2000px; /* Ermöglicht 3D-Effekt beim Umblättern */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .book {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            transition: transform 0.5s ease;
+        }
+
+        /* Jedes Blatt (Paper) besteht aus Vorder- und Rückseite */
+        .page-sheet {
+            position: absolute;
+            width: 50%;
+            height: 100%;
+            top: 0;
+            right: 0;
+            transform-origin: left center;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+            z-index: 1;
+            pointer-events: none; /* Deaktiviert Klicks während Animationen */
+        }
+
+        /* Aktivieren der Pointer-Events für das aktuell sichtbare Blatt */
+        .page-sheet.active, .page-sheet.flipped {
+            pointer-events: auto;
+        }
+
+        /* Die einzelnen Seitenhälften (Inhalt) */
+        .page-side {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background: #fbf8f3;
+            padding: 30px;
+            box-shadow: inset 3px 0 20px rgba(0,0,0,0.1);
+            backface-visibility: hidden; /* Versteckt die Rückseite, wenn weggedreht */
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        /* Vorderseite des Blattes (zeigt nach rechts im geschlossenen Zustand) */
+        .page-side.front {
+            z-index: 2;
+            border-radius: 0 10px 10px 0;
+            border-left: 1px solid rgba(0,0,0,0.1);
+        }
+
+        /* Rückseite des Blattes (zeigt nach links nach dem Umblättern) */
+        .page-side.back {
+            transform: rotateY(180deg);
+            z-index: 1;
+            border-radius: 10px 0 0 10px;
+            border-right: 1px solid rgba(0,0,0,0.1);
+            box-shadow: inset -3px 0 20px rgba(0,0,0,0.1);
+        }
+
+        /* Zustand: Umgeblättert (Nach links geklappt) */
+        .page-sheet.flipped {
+            transform: rotateY(-180deg);
+        }
+
+        /* --- SPEZIELLE SEITEN-STYLES --- */
+        
+        /* Das Buch-Cover (Erste Seite, liegt rechts) */
+        .cover-front {
+            background: linear-gradient(135deg, #8e44ad, #2c3e50);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            border-radius: 0 15px 15px 0 !important;
+            box-shadow: inset 4px 0 10px rgba(0,0,0,0.3), 5px 5px 15px rgba(0,0,0,0.4);
+        }
+
+        .cover-front h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            font-family: 'Times New Roman', serif;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .cover-front p {
+            font-style: italic;
+            opacity: 0.8;
+        }
+
+        /* Rückseite des Covers (Innentext links nach dem Öffnen) */
+        .cover-back-internal {
+            background: #f5f2eb !important;
+            border-radius: 15px 0 0 15px !important;
+        }
+
+        /* Standard Text-Formatierung im Buch */
+        h2 {
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+            color: #1a252f;
+            border-bottom: 2px solid #bdc3c7;
+            padding-bottom: 5px;
+        }
+
+        p {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .page-number {
+            position: absolute;
+            bottom: 15px;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+        .front .page-number { right: 20px; }
+        .back .page-number { left: 20px; }
+
+        /* Mittlere Buchfalz-Effekt */
+        .book::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 10px;
+            height: 100%;
+            background: linear-gradient(to right, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.15) 100%);
+            transform: translateX(-50%);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Navigation Buttons */
+        .controls {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            z-index: 20;
+        }
+
+        .btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background-color: #c0392b;
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background-color: #7f8c8d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Hinweis für Touch-Gesten */
+        .hint {
+            margin-top: 15px;
+            color: #bdc3c7;
+            font-size: 0.9rem;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Buch-Container -->
+    <div class="book-container" id="swipe-zone">
+        <div class="book" id="book">
+            
+            <!-- BLATT 1: COVER (Vorderseite) & ERSTE INNENSEITE (Rückseite) -->
+            <div class="page-sheet active" style="z-index: 5;">
+                <!-- VORDERSEITE: Das Cover (liegt rechts, da Buch geschlossen) -->
+                <div class="page-side front cover-front">
+                    <h1>Das Magische Buch</h1>
+                    <p>Ein interaktives Leseerlebnis</p>
+                    <div style="margin-top: 40px; font-size: 0.8rem; letter-spacing: 2px;">SWIPE ODER BUTTON NUTZEN</div>
+                </div>
+                <!-- RÜCKSEITE: Erste linke Innenseite nach dem Aufschlagen -->
+                <div class="page-side back cover-back-internal">
+                    <h2>Einführung</h2>
+                    <p>Willkommen in diesem interaktiven Buch! Dieses Layout wurde speziell optimiert, um sowohl auf einem PC als auch im Querformat eines iPads eine hervorragende Figur zu machen.</p>
+                    <p>Durch die Nutzung moderner CSS 3D-Transformationen verhält sich jedes Element wie echtes Papier. Wenn Sie vorblättern, bewegt sich die Animation von rechts nach links. Wenn Sie zurückblättern, von links nach rechts.</p>
+                    <span class="page-number">1</span>
+                </div>
+            </div>
+
+            <!-- BLATT 2: ZWEITE DOPPELSEITE (Rechte Seite von Spread 1 & Linke Seite von Spread 2) -->
+            <div class="page-sheet" style="z-index: 4;">
+                <!-- VORDERSEITE: Rechte Seite des ersten Spreads -->
+                <div class="page-side front">
+                    <h2>Kapitel 1: Der Anfang</h2>
+                    <p>Es war einmal eine digitale Welt, in der Dokumente flach und starr waren. Doch mit der Einführung von CSS3 änderte sich alles. Entwickler erhielten die Macht, die dritte Dimension im Browser zu nutzen.</p>
+                    <p>Dieses Buch demonstriert, wie flüssig Animationen ohne schwere Bibliotheken laufen können, wenn man reines Vanilla JavaScript und CSS-Hardwarebeschleunigung kombiniert.</p>
+                    <span class="page-number">2</span>
+                </div>
+                <!-- RÜCKSEITE: Linke Seite des zweiten Spreads -->
+                <div class="page-side back">
+                    <h2>Kapitel 2: Die Technik</h2>
+                    <p>Die Struktur ist denkbar einfach aufgebaut. Jedes logische "Blatt" Papier ist ein Container im HTML. Dieser beinhaltet zwei Divs: Eine Vorderseite (front) und eine Rückseite (back).</p>
+                    <p>Mithilfe von <code>backface-visibility: hidden</code> wird sichergestellt, dass man die Rückseite einer Seite erst sieht, wenn sie um 180 Grad gedreht wurde.</p>
+                    <span class="page-number">3</span>
+                </div>
+            </div>
+
+            <!-- BLATT 3: DRITTE DOPPELSEITE (Rechte Seite von Spread 2 & Letzte Innenseite) -->
+            <div class="page-sheet" style="z-index: 3;">
+                <!-- VORDERSEITE: Rechte Seite des zweiten Spreads -->
+                <div class="page-side front">
+                    <h2>Kapitel 3: Touch & Gesten</h2>
+                    <p>Für mobile Geräte wie das Apple iPad wurden Touch-Events (<code>touchstart</code> und `touchend`) implementiert. Sie berechnen die Wischrichtung anhand des horizontalen Vektors.</p>
+                    <p>Egal ob Sie mit dem Finger wischen oder die Steuerungstasten unter dem Buch nutzen: Die Animation folgt exakt den physikalischen Regeln eines echten Buches.</p>
+                    <span class="page-number">4</span>
+                </div>
+                <!-- RÜCKSEITE: Das Back-Cover / Letzte linke Seite -->
+                <div class="page-side back" style="background: linear-gradient(135deg, #2c3e50, #1a252f); color: white;">
+                    <h2>Das Ende</h2>
+                    <p style="color: #bdc3c7;">Sie haben das Ende dieser Demonstration erreicht.</p>
+                    <p style="color: #bdc3c7;">Sie können diese Struktur beliebig erweitern, indem Sie weitere Blätter (Divs) nach demselben Muster im HTML-Code hinzufügen.</p>
+                    <div style="text-align: center; margin-top: 50px; font-size: 2rem;">📖</div>
+                    <span class="page-number" style="color: #bdc3c7;">5</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Navigationsknöpfe -->
+    <div class="controls">
+        <button class="btn" id="prev-btn" disabled>Zurück</button>
+        <button class="btn" id="next-btn">Vorwärts</button>
+    </div>
+
+    <div class="hint">Tipp: Wische nach links/rechts oder nutze die Buttons.</div>
+
+    <!-- JAVASCRIPT FÜR DIE INTERAKTION -->
+    <script>
+        // DOM Elemente selektieren
+        const sheets = document.querySelectorAll('.page-sheet');
+        const prevBtn = document.querySelector('#prev-btn');
+        const nextBtn = document.querySelector('#next-btn');
+        const swipeZone = document.querySelector('#swipe-zone');
+
+        let currentSheetIndex = 0;
+        const maxSheets = sheets.length;
+
+        // Funktion zum Aktualisieren der Z-Indizes basierend auf der aktuellen Position
+        // Dies verhindert, dass umgeblätterte Seiten falsch übereinanderlappen
+        function updateZIndices() {
+            sheets.forEach((sheet, index) => {
+                if (index < currentSheetIndex) {
+                    // Bereits nach links umgeblätterte Blätter
+                    sheet.style.zIndex = index;
+                } else if (index === currentSheetIndex) {
+                    // Das aktuell aktive Blatt oben auf dem Stapel
+                    sheet.style.zIndex = maxSheets + 1;
+                } else {
+                    // Zukünftige Blätter, die noch rechts liegen
+                    sheet.style.zIndex = maxSheets - index;
+                }
+            });
+        }
+
+        // Initialisierung der Z-Indizes beim Laden
+        updateZIndices();
+
+        // Hauptfunktion zum Vorwärtsblättern (Von Rechts nach Links drehen)
+        function goNextPage() {
+            if (currentSheetIndex < maxSheets) {
+                const sheet = sheets[currentSheetIndex];
+                sheet.classList.add('flipped');
+                sheet.classList.remove('active');
+                
+                currentSheetIndex++;
+                
+                if (currentSheetIndex < maxSheets) {
+                    sheets[currentSheetIndex].classList.add('active');
+                }
+                
+                updateZIndices();
+                updateButtons();
+            }
+        }
+
+        // Hauptfunktion zum Zurückblättern (Von Links nach Rechts zurückdrehen)
+        function goPrevPage() {
+            if (currentSheetIndex > 0) {
+                if (currentSheetIndex < maxSheets) {
+                    sheets[currentSheetIndex].classList.remove('active');
+                }
+                
+                currentSheetIndex--;
+                
+                const sheet = sheets[currentSheetIndex];
+                sheet.classList.remove('flipped');
+                sheet.classList.add('active');
+                
+                updateZIndices();
+                updateButtons();
+            }
+        }
+
+        // Steuerung der Button-Zustände (Aktivieren/Deaktivieren am Anfang/Ende)
+        function updateButtons() {
+            prevBtn.disabled = (currentSheetIndex === 0);
+            nextBtn.disabled = (currentSheetIndex === maxSheets);
+        }
+
+        // Klick-Events für die Buttons
+        nextBtn.addEventListener('click', goNextPage);
+        prevBtn.addEventListener('click', goPrevPage);
+
+        // --- SWIPE / TOUCH GESTEN MANAGEMENT ---
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const minSwipeDistance = 50; // Mindestdistanz in Pixeln für einen gültigen Swipe
+
+        swipeZone.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
+
+        swipeZone.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipeGesture();
+        }, { passive: true });
+
+        // Auswertung der Wisch-Richtung
+        function handleSwipeGesture() {
+            const distance = touchEndX - touchStartX;
+            
+            // Wenn nach links gewischt wird -> Nächste Seite (Blättern von rechts nach links)
+            if (distance < -minSwipeDistance) {
+                goNextPage();
+            }
+            // Wenn nach rechts gewischt wird -> Vorherige Seite (Blättern von links nach rechts)
+            else if (distance > minSwipeDistance) {
+                goPrevPage();
+            }
+        }
+
+        // Tastatursteuerung für PC-Nutzer (Pfeiltasten)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') {
+                goNextPage();
+            } else if (e.key === 'ArrowLeft') {
+                goPrevPage();
+            }
+        });
+    </script>
+</body>
+</html>
